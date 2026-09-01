@@ -20,11 +20,25 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api import (
+    alerts,
+    cameras,
+    detections,
+    frames,
+    license_plates,
+    stats,
+    vehicle_events,
+    vehicles,
+    videos,
+)
 from app.config import settings
 from app.database.connection import check_database_connection
-from app.api.routes import router as api_router
-from app.websocket.live import router as live_router
 from app.utils.logger import get_logger, setup_logging
+
+# Importing app.models registers every ORM model on Base.metadata — required
+# before any create_all()/Alembic autogenerate call, and before the routers
+# below execute any query.
+import app.models  # noqa: F401
 
 setup_logging(level=settings.LOG_LEVEL, json_output=settings.LOG_JSON)
 logger = get_logger(__name__)
@@ -79,9 +93,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(api_router)
-app.include_router(live_router)
-
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -133,15 +144,23 @@ def health() -> dict:
     }
 
 
+app.include_router(cameras.router, prefix="/api/cameras", tags=["Cameras"])
+app.include_router(videos.router, prefix="/api/videos", tags=["Videos"])
+app.include_router(frames.router, prefix="/api/frames", tags=["Frames"])
+app.include_router(detections.router, prefix="/api/detections", tags=["Detections"])
+app.include_router(license_plates.router, prefix="/api/license-plates", tags=["License Plates"])
+app.include_router(vehicles.router, prefix="/api/vehicles", tags=["Vehicles"])
+app.include_router(vehicle_events.router, prefix="/api/vehicle-events", tags=["Vehicle Events"])
+app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
+app.include_router(stats.router, prefix="/api/stats", tags=["Stats"])
+
 # ---------------------------------------------------------------------------
-# Routers are registered here as each module is implemented:
+# Not yet implemented — added in later stages once the AI/CV modules exist:
 #
-# from app.api import cameras, anpr, tracking, traffic, alerts
-# app.include_router(cameras.router, prefix="/api/cameras", tags=["Cameras"])
+# from app.api import anpr, tracking, traffic
 # app.include_router(anpr.router, prefix="/api/anpr", tags=["ANPR"])
 # app.include_router(tracking.router, prefix="/api/tracking", tags=["Tracking"])
 # app.include_router(traffic.router, prefix="/api/traffic", tags=["Traffic"])
-# app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
 #
 # from app.websocket.manager import router as ws_router
 # app.include_router(ws_router)
