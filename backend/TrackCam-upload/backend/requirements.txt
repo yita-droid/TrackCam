@@ -1,0 +1,53 @@
+# =============================================================================
+# TrackCam Backend — Python dependencies
+#
+# Listed upfront (per the project plan) but only the "Stage 2" group is
+# actually exercised by the code that exists so far. Later stages introduce
+# CV/AI dependencies as their modules are implemented — nothing here is
+# imported before it's needed.
+#
+# GPU note: this file installs CPU-friendly defaults. For CUDA acceleration,
+# install torch/paddlepaddle following their official index instructions
+# (see README.md "Model installation" section) BEFORE `pip install -r`,
+# or pip may pull CPU-only wheels.
+# =============================================================================
+
+# ---- Stage 2: Core API foundation ------------------------------------------
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-dotenv==1.0.1
+python-multipart==0.0.20
+
+# ---- Stage 2: Database -------------------------------------------------
+sqlalchemy==2.0.36
+alembic==1.14.0
+psycopg2-binary==2.9.10
+
+# ---- Stage 2: Testing ----------------------------------------------------
+pytest==8.3.4
+pytest-asyncio==0.25.0
+httpx==0.28.1
+
+# ---- Stage 3: Computer vision + ANPR (YOLO11, plate detector, OCR) ---------
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+pillow==11.0.0
+ultralytics==8.3.55
+paddleocr==2.9.1
+paddlepaddle==2.6.2
+
+# ---- Stage 4/5: Tracking + Re-ID -------------------------------------------
+torch==2.5.1
+torchvision==0.20.1
+scipy==1.14.1
+lap==0.5.12
+filterpy==1.4.5
+
+# ---- Stage 6: Traffic prediction (LSTM) + data tooling ---------------------
+pandas==2.2.3
+scikit-learn==1.6.0
+
+# ---- Stage 8: WebSocket (bundled with uvicorn[standard]/websockets) --------
+websockets==14.1
