@@ -1,9 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { Activity, AlertTriangle, ArrowRight, Bell, Camera, Check, ChevronDown, CircleDot, Clock3, Eye, Grid2X2, Info, MapPin, Menu, Network, Radio, Route, ScanLine, Search, ShieldAlert, Signal, Siren, TrendingUp, Users, X } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { Activity, AlertTriangle, ArrowRight, Bell, Camera, Check, ChevronDown, CircleDot, Clock3, Eye, FileVideo, Film, FolderOpen, Grid2X2, Image, Info, MapPin, Menu, Network, Play, Plus, Radio, RefreshCw, Route, ScanLine, Search, ShieldAlert, Signal, Siren, TrendingUp, Upload, Users, X } from 'lucide-react'
 import { alerts, cameras, navItems, vehicles, type Section } from './data'
-
 type VehicleKey = keyof typeof vehicles
 
 const iconMap = { grid: Grid2X2, scan: ScanLine, route: Route, chart: TrendingUp, bell: Bell }
@@ -17,7 +16,7 @@ function Confidence({ value }: { value: number }) {
   return <Badge tone={tone}>{value}% {value >= 85 ? 'HIGH' : value >= 70 ? 'REVIEW' : 'UNCERTAIN'}</Badge>
 }
 
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <section className={`panel ${className}`}>{children}</section> }
+function Card({ children, className = '', style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) { return <section className={`panel ${className}`} style={style}>{children}</section> }
 
 function Header({ section, onMenu }: { section: Section; onMenu: () => void }) {
   return <header className="topbar"><button className="mobile-menu" onClick={onMenu} aria-label="Open navigation"><Menu size={20} /></button><div><div className="eyebrow">CITY OPERATIONS / TRACKCAM</div><h1>{section}</h1></div><div className="top-actions"><span className="live-dot"><span /> Network live</span><button className="icon-button" aria-label="Notifications"><Bell size={18} /><i /></button><div className="operator"><div className="avatar">OP</div><div><strong>Operations Desk</strong><small>Chennai Command</small></div><ChevronDown size={15} /></div></div></header>
@@ -38,7 +37,374 @@ function CityMap({ trajectory, onCheckpoint }: { trajectory?: readonly any[]; on
 
 function Overview({ go }: { go: (s: Section) => void }) { return <><PageIntro kicker="01 / CITY-WIDE VIEW" title="Good morning, Operations Desk" copy="A confidence-aware view of movement across the Chennai camera network." action={<button className="outline-button" onClick={() => go('ANPR Monitor')}><ScanLine size={16} /> Open camera monitor</button>} /><div className="kpi-grid"><KPI icon={Camera} value="28 / 32" label="Active cameras" trend="2 since 09:00" /><KPI icon={Activity} value="12,846" label="Vehicles observed" trend="8.4% vs yesterday" /><KPI icon={Bell} value="3" label="Active alerts" tone="red" /><KPI icon={Signal} value="91.8%" label="Avg. observation confidence" tone="amber" /></div><div className="overview-grid"><Card className="map-card"><div className="card-head"><div><h3>Live camera network</h3><p>Observation activity in the last 15 minutes</p></div><div className="map-legend"><span><i className="dot teal" /> Active</span><span><i className="dot amber" /> Moderate</span><span><i className="dot red" /> Congested</span></div></div><CityMap onCheckpoint={p => go('Vehicle Tracking')} /></Card><Card className="alerts-preview"><div className="card-head"><div><h3>Recent alerts</h3><p>Events requiring attention</p></div><button className="text-button" onClick={() => go('Alerts')}>View all <ArrowRight size={14} /></button></div>{alerts.slice(0, 3).map(a => <div className="alert-row" key={a.plate + a.time}><div className={`alert-symbol ${a.tone}`}><AlertTriangle size={15} /></div><div><strong>{a.type === 'WATCHLIST MATCH' ? 'Watchlist match' : 'Potential route anomaly'}</strong><span>{a.plate} · {a.camera}</span></div><Confidence value={a.confidence} /></div>)}</Card></div><div className="bottom-grid"><Card><div className="card-head"><div><h3>Traffic status</h3><p>Current density across key corridors</p></div><button className="text-button" onClick={() => go('Traffic Analytics')}>Analytics <ArrowRight size={14} /></button></div><div className="traffic-list">{[['Anna Salai','High','68%', 'red'], ['Rajaji Salai','Moderate','44%', 'amber'], ['GST Road','Low','21%', 'teal']].map(([name, status, width, tone]) => <div className="traffic-item" key={name}><div><strong>{name}</strong><span>{status}</span></div><div className="bar"><i className={tone} style={{ width }} /></div><small>{width}</small></div>)}</div></Card><Card><div className="card-head"><div><h3>Vehicle activity</h3><p>Most observed plates, last hour</p></div><button className="text-button" onClick={() => go('Vehicle Tracking')}>Explore <ArrowRight size={14} /></button></div><div className="activity-list">{[['TN01AB1234','4 cameras','88%'], ['TN01XX9999','3 cameras','93%'], ['KA03YY1111','2 cameras','86%']].map(([plate, cams, conf]) => <button key={plate} onClick={() => go('Vehicle Tracking')}><div className="plate-mini">{plate}</div><span>{cams}</span><Confidence value={Number.parseInt(conf)} /><ArrowRight size={15} /></button>)}</div></Card></div></> }
 
-function ANPR({ camera, setCamera }: { camera: number; setCamera: (n: number) => void }) { const c = cameras[camera]; return <><PageIntro kicker="02 / EVIDENCE STREAM" title="ANPR monitor" copy="Review live observations before they become vehicle events." action={<div className="camera-select"><Camera size={16} /><select value={camera} onChange={e => setCamera(Number(e.target.value))}>{cameras.map((cam, i) => <option value={i} key={cam.id}>{cam.id} · {cam.name}</option>)}</select><ChevronDown size={15} /></div>} /><div className="monitor-grid"><Card className="feed-card"><div className="feed-top"><span className="live-tag"><span /> LIVE SIMULATION</span><span>{c.time} · {c.id}</span></div><div className="feed-visual"><div className="feed-grid" /><div className="vehicle-box"><span>VEHICLE · 0.97</span></div><div className="plate-box"><span>PLATE · {c.confidence}%</span></div><div className="feed-caption"><strong>{c.location}</strong><small>Frame 1248 · 1920 × 1080</small></div></div><div className="feed-meta"><div><small>Detected plate</small><strong>{c.plate}</strong></div><div><small>Observation confidence</small><Confidence value={c.confidence} /></div><div><small>Quality</small><Badge tone={c.quality === 'Good' ? 'good' : 'warn'}>{c.quality} {c.quality !== 'Good' && '· glare'}</Badge></div></div></Card><div className="evidence-col"><Card><div className="card-head"><div><h3>Multi-frame OCR evidence</h3><p>Three frames, one fused observation</p></div><Info size={17} className="muted" /></div><div className="frame-list">{[['01','TN01AB1234','94%','good'],['02','TN01AB1234','91%','good'],['03','TN01A81234','68%','warn']].map(([frame, plate, conf, tone]) => <div className="frame-row" key={frame}><span className="frame-no">FRAME {frame}</span><strong>{plate}</strong><Badge tone={tone as any}>{conf}</Badge>{tone === 'warn' && <small>character ambiguity</small>}</div>)}</div><div className="fused-result"><div className="fused-icon"><Check size={19} /></div><div><small>FUSED RESULT</small><strong>TN01AB1234</strong><span><span className="tiny-dot" /> High confidence · 94%</span></div><Badge tone="good">ACCEPTED</Badge></div></Card><Card className="quality-card"><div className="card-head"><div><h3>Observation quality</h3><p>Signals that shape confidence</p></div><Badge tone="good">Good</Badge></div><div className="quality-signals"><span><Check size={14} /> Sharpness <b>0.92</b></span><span><Check size={14} /> Visibility <b>0.88</b></span><span><Check size={14} /> Plate angle <b>0.95</b></span></div><div className="quality-note"><Eye size={16} /><p>TrackCam uses evidence across frames instead of trusting one OCR read.</p></div></Card></div></div></> }
+interface CustomUploadedFile {
+  name: string
+  type: 'image' | 'video'
+  previewUrl?: string
+  plate: string
+  confidence: number
+  quality: string
+  location: string
+  time: string
+  frames: [string, string, string, string, string?][]
+}
+
+const sampleLocalFiles: CustomUploadedFile[] = [
+  {
+    name: 'Dashcam_AnnaSalai_Highway.mp4',
+    type: 'video',
+    plate: 'TN01AB1234',
+    confidence: 94,
+    quality: 'Good',
+    location: 'Local Drive / Anna Salai Footage',
+    time: '10:45:00',
+    frames: [
+      ['01', 'TN01AB1234', '95%', 'good'],
+      ['02', 'TN01AB1234', '94%', 'good'],
+      ['03', 'TN01AB1234', '92%', 'good'],
+    ]
+  },
+  {
+    name: 'Night_Gate_Scan_042.jpg',
+    type: 'image',
+    plate: 'TN01XX9999',
+    confidence: 91,
+    quality: 'Good',
+    location: 'Local Drive / Gate Snapshot',
+    time: '10:48:12',
+    frames: [
+      ['01', 'TN01XX9999', '93%', 'good'],
+      ['02', 'TN01XX9999', '91%', 'good'],
+      ['03', 'TN01XX9990', '71%', 'warn', 'lighting glare'],
+    ]
+  },
+  {
+    name: 'Toll_Plaza_HeavyRain.mp4',
+    type: 'video',
+    plate: 'KA03YY1111',
+    confidence: 76,
+    quality: 'Degraded',
+    location: 'Local Drive / Toll Video',
+    time: '10:50:33',
+    frames: [
+      ['01', 'KA03YY1111', '78%', 'good'],
+      ['02', 'KA03YY1111', '76%', 'warn', 'rain drops'],
+      ['03', 'KA03YY1117', '62%', 'warn', 'blur'],
+    ]
+  }
+]
+
+function ANPR({ camera, setCamera }: { camera: number; setCamera: (n: number) => void }) {
+  const c = cameras[camera]
+  const [feedMode, setFeedMode] = useState<'live' | 'upload'>('live')
+  const [uploadedFile, setUploadedFile] = useState<CustomUploadedFile | null>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsAnalyzing(true)
+    const isVideo = file.type.startsWith('video/')
+    const previewUrl = URL.createObjectURL(file)
+
+    setTimeout(() => {
+      setUploadedFile({
+        name: file.name,
+        type: isVideo ? 'video' : 'image',
+        previewUrl,
+        plate: 'TN01AB1234',
+        confidence: Math.floor(84 + Math.random() * 14),
+        quality: 'Good',
+        location: `Local File · ${file.name}`,
+        time: new Date().toLocaleTimeString('en-US', { hour12: false }),
+        frames: [
+          ['01', 'TN01AB1234', '96%', 'good'],
+          ['02', 'TN01AB1234', '93%', 'good'],
+          ['03', 'TN01AB1234', '89%', 'good'],
+        ]
+      })
+      setIsAnalyzing(false)
+    }, 800)
+  }
+
+  const handleSelectSample = (sample: CustomUploadedFile) => {
+    setIsAnalyzing(true)
+    setTimeout(() => {
+      setUploadedFile(sample)
+      setIsAnalyzing(false)
+    }, 500)
+  }
+
+  const activePlate = feedMode === 'live' ? c.plate : (uploadedFile?.plate || 'TN01AB1234')
+  const activeConfidence = feedMode === 'live' ? c.confidence : (uploadedFile?.confidence || 94)
+  const activeQuality = feedMode === 'live' ? c.quality : (uploadedFile?.quality || 'Good')
+  const activeFrames = feedMode === 'live'
+    ? [['01','TN01AB1234','94%','good'],['02','TN01AB1234','91%','good'],['03','TN01A81234','68%','warn']]
+    : (uploadedFile?.frames || sampleLocalFiles[0].frames)
+
+  return (
+    <>
+      <PageIntro
+        kicker="02 / EVIDENCE STREAM & REVIEW"
+        title="ANPR monitor & review"
+        copy="Review live camera feeds or import local drive images and videos for offline ANPR analysis."
+        action={
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', background: '#e9ecef', borderRadius: '8px', padding: '3px' }}>
+              <button
+                onClick={() => setFeedMode('live')}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: feedMode === 'live' ? '#2d3f46' : 'transparent',
+                  color: feedMode === 'live' ? '#fff' : '#495057',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Camera size={14} /> Live Stream
+              </button>
+              <button
+                onClick={() => setFeedMode('upload')}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: feedMode === 'upload' ? '#2d3f46' : 'transparent',
+                  color: feedMode === 'upload' ? '#fff' : '#495057',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Upload size={14} /> Local Files
+              </button>
+            </div>
+
+            {feedMode === 'live' ? (
+              <div className="camera-select">
+                <Camera size={16} />
+                <select value={camera} onChange={e => setCamera(Number(e.target.value))}>
+                  {cameras.map((cam, i) => (
+                    <option value={i} key={cam.id}>{cam.id} · {cam.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={15} />
+              </div>
+            ) : (
+              <button
+                className="dark-button"
+                onClick={() => fileInputRef.current?.click()}
+                style={{ padding: '6px 14px', fontSize: '12px' }}
+              >
+                <FolderOpen size={15} /> Select Drive File
+              </button>
+            )}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept="image/*,video/*"
+              style={{ display: 'none' }}
+            />
+          </div>
+        }
+      />
+
+      {feedMode === 'upload' && (
+        <Card style={{ marginBottom: '16px', padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Local File ANPR Ingestion</h4>
+              <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted-foreground)' }}>
+                Upload dashcam footage, gate snapshot images, or highway CCTV recordings from your local drive.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                className="outline-button"
+                onClick={() => fileInputRef.current?.click()}
+                style={{ fontSize: '11px', padding: '5px 10px' }}
+              >
+                <Plus size={13} /> Add Image / Video
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', fontWeight: 500 }}>Quick sample files:</span>
+            {sampleLocalFiles.map((s, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleSelectSample(s)}
+                style={{
+                  fontSize: '11px',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  border: '1px solid #dcdfe1',
+                  background: uploadedFile?.name === s.name ? '#e8f4f1' : '#fff',
+                  color: uploadedFile?.name === s.name ? '#173b3b' : '#495057',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                {s.type === 'video' ? <FileVideo size={12} /> : <Image size={12} />}
+                {s.name}
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <div className="monitor-grid">
+        <Card className="feed-card">
+          <div className="feed-top">
+            <span className="live-tag" style={{ color: feedMode === 'upload' ? '#3b789f' : '#3b8d80' }}>
+              <span style={{ background: feedMode === 'upload' ? '#3b789f' : '#3b9f8e' }} />
+              {feedMode === 'live' ? 'LIVE SIMULATION' : 'LOCAL DRIVE FILE REVIEW'}
+            </span>
+            <span>
+              {feedMode === 'live' ? `${c.time} · ${c.id}` : (uploadedFile?.name || 'Local_File_Ingest.mp4')}
+            </span>
+          </div>
+
+          <div className="feed-visual">
+            <div className="feed-grid" />
+            {isAnalyzing && (
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                background: 'rgba(23, 59, 59, 0.85)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                zIndex: 10
+              }}>
+                <RefreshCw size={24} style={{ animation: 'spin 1s linear infinite' }} />
+                <span style={{ marginTop: '10px', fontSize: '13px', fontWeight: 600 }}>Analyzing Local Media...</span>
+                <small style={{ fontSize: '10px', color: '#71c9b8', marginTop: '4px' }}>Running Multi-Frame OCR & Plate Detection</small>
+              </div>
+            )}
+
+            {feedMode === 'upload' && uploadedFile?.previewUrl ? (
+              uploadedFile.type === 'video' ? (
+                <video
+                  src={uploadedFile.previewUrl}
+                  controls
+                  autoPlay
+                  loop
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                <img
+                  src={uploadedFile.previewUrl}
+                  alt="Uploaded local file"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              )
+            ) : null}
+
+            {/* Bounding box simulation */}
+            <div className="vehicle-box"><span>VEHICLE · 0.97</span></div>
+            <div className="plate-box"><span>PLATE · {activeConfidence}%</span></div>
+
+            <div className="feed-caption">
+              <strong>{feedMode === 'live' ? c.location : (uploadedFile?.location || 'Local Drive Media Import')}</strong>
+              <small>
+                {feedMode === 'live' ? 'Frame 1248 · 1920 × 1080' : `Source: ${uploadedFile?.name || 'Local Drive'} · Processed`}
+              </small>
+            </div>
+          </div>
+
+          <div className="feed-meta">
+            <div>
+              <small>Detected plate</small>
+              <strong>{activePlate}</strong>
+            </div>
+            <div>
+              <small>Observation confidence</small>
+              <Confidence value={activeConfidence} />
+            </div>
+            <div>
+              <small>Quality</small>
+              <Badge tone={activeQuality === 'Good' ? 'good' : 'warn'}>
+                {activeQuality} {activeQuality !== 'Good' && '· glare/rain'}
+              </Badge>
+            </div>
+          </div>
+        </Card>
+
+        <div className="evidence-col">
+          <Card>
+            <div className="card-head">
+              <div>
+                <h3>Multi-frame OCR evidence</h3>
+                <p>{feedMode === 'live' ? 'Three frames, one fused observation' : 'Extracted frames from local drive file'}</p>
+              </div>
+              <Info size={17} className="muted" />
+            </div>
+            <div className="frame-list">
+              {activeFrames.map(([frame, plate, conf, tone, note]) => (
+                <div className="frame-row" key={frame}>
+                  <span className="frame-no">FRAME {frame}</span>
+                  <strong>{plate}</strong>
+                  <Badge tone={tone as any}>{conf}</Badge>
+                  {note && <small>{note}</small>}
+                </div>
+              ))}
+            </div>
+            <div className="fused-result">
+              <div className="fused-icon"><Check size={19} /></div>
+              <div>
+                <small>FUSED RESULT</small>
+                <strong>{activePlate}</strong>
+                <span><span className="tiny-dot" /> High confidence · {activeConfidence}%</span>
+              </div>
+              <Badge tone="good">ACCEPTED</Badge>
+            </div>
+          </Card>
+
+          <Card className="quality-card">
+            <div className="card-head">
+              <div>
+                <h3>Observation quality</h3>
+                <p>Signals that shape confidence</p>
+              </div>
+              <Badge tone={activeQuality === 'Good' ? 'good' : 'warn'}>{activeQuality}</Badge>
+            </div>
+            <div className="quality-signals">
+              <span><Check size={14} /> Sharpness <b>0.92</b></span>
+              <span><Check size={14} /> Visibility <b>0.88</b></span>
+              <span><Check size={14} /> Plate angle <b>0.95</b></span>
+            </div>
+            <div className="quality-note">
+              <Eye size={16} />
+              <p>
+                {feedMode === 'live'
+                  ? 'TrackCam uses evidence across frames instead of trusting one OCR read.'
+                  : 'Local drive files undergo frame extraction and temporal fusion prior to network logging.'}
+              </p>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </>
+  )
+}
 
 function Tracking({ selected, setSelected }: { selected: VehicleKey; setSelected: (v: VehicleKey) => void }) { const v = vehicles[selected]; const [checkpoint, setCheckpoint] = useState<any>(null); return <><PageIntro kicker="03 / VEHICLE EVENT" title="Vehicle tracking" copy="Follow a vehicle across the network, with uncertainty kept visible." action={<div className="search-box"><Search size={17} /><input aria-label="Search license plate" value={selected} onChange={e => { const val = e.target.value.toUpperCase() as VehicleKey; if (val in vehicles) setSelected(val) }} placeholder="Search license plate…" /><ChevronDown size={14} /></div>} /><div className="plate-chips">{Object.keys(vehicles).map(p => <button className={p === selected ? 'selected' : ''} onClick={() => setSelected(p as VehicleKey)} key={p}>{p}</button>)}</div><div className="tracking-grid"><Card className="trajectory-card"><div className="card-head"><div><h3>Confidence-aware trajectory</h3><p>{selected} · {v.events.length} observations connected</p></div><Badge tone="teal"><Route size={13} /> CONNECTED VIEW</Badge></div><CityMap trajectory={v.events} onCheckpoint={setCheckpoint} />{checkpoint && <div className="checkpoint-detail"><div><MapPin size={16} /><strong>{checkpoint.camera}</strong><span>{checkpoint.place} · {checkpoint.time}</span></div><Confidence value={checkpoint.confidence} /><button onClick={() => setCheckpoint(null)} aria-label="Close checkpoint"><X size={15} /></button></div>}</Card><Card className="summary-card"><div className="card-head"><div><h3>Journey summary</h3><p>Aggregated from camera evidence</p></div></div><div className="summary-stats"><div><small>First seen</small><strong>{v.first}</strong></div><div><small>Last seen</small><strong>{v.last}</strong></div><div><small>Cameras visited</small><strong>{v.events.length}</strong></div><div><small>Route duration</small><strong>{v.duration}</strong></div></div><div className="overall-confidence"><div><span>Overall confidence</span><strong>{v.overall}%</strong></div><div className="confidence-meter"><i style={{ width: `${v.overall}%` }} /></div><small>Weighted by plate, appearance, time, location and motion</small></div><div className="logic-flow"><span>PLATE</span><ArrowRight size={13} /><span>RE-ID</span><ArrowRight size={13} /><span>TIME</span><ArrowRight size={13} /><span>LOCATION</span></div></Card></div><div className="timeline-grid"><Card><div className="card-head"><div><h3>Chronological evidence</h3><p>Every checkpoint contributes to the story</p></div></div><div className="timeline">{v.events.map((e, i) => <div className={`timeline-event ${e.state === 'UNCERTAIN' ? 'uncertain' : ''}`} key={e.camera}><div className="timeline-marker"><span>{i + 1}</span></div><div className="timeline-content"><div><strong>{e.camera}</strong><Badge tone={e.state === 'UNCERTAIN' ? 'warn' : 'good'}>{e.state}</Badge></div><span>{e.place}</span><small><Clock3 size={13} /> {e.time}</small></div><Confidence value={e.confidence} /></div>)}</div></Card><Card className="uncertain-card"><div className="uncertain-mark"><AlertTriangle size={19} /></div><div><h3>Uncertain ≠ discarded</h3><p>CAM014 returned a weaker read due to glare. TrackCam lowers confidence for that window, then keeps the trajectory open for later evidence.</p><button className="text-button">How association works <ArrowRight size={14} /></button></div></Card></div></> }
 
