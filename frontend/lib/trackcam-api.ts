@@ -37,6 +37,24 @@ export function getHealth() {
   return request<{ status: string; database: { connected: boolean } }>('/health')
 }
 
+export interface VehicleBox {
+  box: [number, number, number, number]  // [x1, y1, x2, y2] in image pixels
+  label: string
+  conf: number
+}
+
+export interface PlateDetection {
+  plate: string
+  plate_raw?: string
+  format_valid?: boolean | null
+  confidence: number   // 0-1
+  detect_conf: number
+  quality: string
+  box: [number, number, number, number]  // [x1, y1, x2, y2] in image pixels
+  vehicle: string
+  frames: any[]
+}
+
 export async function analyzeANPR(file: File) {
   const form = new FormData()
   form.append('file', file)
@@ -46,7 +64,8 @@ export async function analyzeANPR(file: File) {
     size_bytes: number
     media_type?: string
     models: { vehicle_detector: boolean; plate_detector: boolean; ocr: boolean }
-    detections: any[]
+    vehicle_boxes: VehicleBox[]
+    detections: PlateDetection[]
     message: string
   }>('/api/anpr/analyze', { method: 'POST', headers: {}, body: form })
 }

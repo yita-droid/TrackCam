@@ -129,11 +129,13 @@ async def analyze(file: UploadFile = File(...)) -> dict[str, Any]:
 
     # Real inference: images only (per demo scope). Videos are accepted and
     # stored but not run through the live pipeline here.
+    vehicle_boxes: list[dict] = []
     if is_image and plate_exists:
         try:
             from app.ai.engine import analyze_image
             result = analyze_image(data)
             detections = result.get("detections", [])
+            vehicle_boxes = result.get("vehicle_boxes", [])
             device = result.get("device")
             ocr_ran = True
         except Exception as exc:  # noqa: BLE001 - report, don't crash the API
@@ -165,6 +167,7 @@ async def analyze(file: UploadFile = File(...)) -> dict[str, Any]:
             "plate_detector": plate_exists,
             "ocr": ocr_ran,
         },
+        "vehicle_boxes": vehicle_boxes,
         "detections": detections,
         "message": message,
     }

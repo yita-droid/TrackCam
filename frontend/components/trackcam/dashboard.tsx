@@ -1,10 +1,85 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, AlertTriangle, ArrowRight, Bell, Camera, Check, ChevronDown, CircleDot, Clock3, Eye, FileVideo, Film, FolderOpen, Grid2X2, Image, Info, MapPin, Menu, Network, Play, Plus, Radio, RefreshCw, Route, ScanLine, Search, ShieldAlert, Signal, Siren, TrendingUp, Upload, Users, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Activity, AlertTriangle, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, Eye, FileVideo, FolderOpen, Grid2X2, Image, Info, MapPin, Menu, Network, Plus, Radio, RefreshCw, Route, ScanLine, Search, ShieldAlert, Signal, Siren, TrendingUp, Upload, X } from 'lucide-react'
 import { alerts, cameras, navItems, vehicles, type Section } from './data'
-import { analyzeANPR, getDashboard, getHealth } from '@/lib/trackcam-api'
+import { analyzeANPR, getDashboard, getHealth, type VehicleBox, type PlateDetection } from '@/lib/trackcam-api'
 type VehicleKey = keyof typeof vehicles
+
+// ---------------------------------------------------------------------------
+// DetectionBoxes — overlays real YOLO bounding boxes onto the feed image.
+//
+// The image is rendered with objectFit:cover inside a fixed-height container.
+// We measure the *rendered* image rect (via ResizeObserver on the <img>) and
+// scale each pixel-space box from the original image dimensions to the
+// on-screen position, accounting for the cover crop offset.
+// ---------------------------------------------------------------------------
+interface DetectionBoxesProps {
+  imgRef: React.RefObject<HTMLImageElement | null>
+  naturalW: number
+  naturalH: number
+  vehicleBoxes: VehicleBox[]
+  plateBoxes: Array<{ box: [number, number, number, number]; label: string; conf: number }>
+}
+
+function DetectionBoxes({ imgRef, naturalW, naturalH, vehicleBoxes, plateBoxes }: DetectionBoxesProps) {
+  const [rect, setRect] = useState<{ w: number; h: number; dx: number; dy: number } | null>(null)
+
+  useEffect(() => {
+    const el = imgRef.current
+    if (!el || !naturalW || !naturalH) return
+
+    const measure = () => {
+      const cr = el.getBoundingClientRect()
+      const parentCr = el.parentElement!.getBoundingClientRect()
+      // objectFit:cover — compute how the image is actually cropped inside the container
+      const containerW = cr.width
+      const containerH = cr.height
+      const scaleX = containerW / naturalW
+      const scaleY = containerH / naturalH
+      const scale = Math.max(scaleX, scaleY)
+      const renderedW = naturalW * scale
+      const renderedH = naturalH * scale
+      // dx/dy: how many pixels of the image are hidden (negative offset)
+      const dx = (containerW - renderedW) / 2
+      const dy = (containerH - renderedH) / 2
+      setRect({ w: renderedW, h: renderedH, dx, dy })
+    }
+
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [imgRef, naturalW, naturalH])
+
+  if (!rect || (!vehicleBoxes.length && !plateBoxes.length)) return null
+
+  const toStyle = ([x1, y1, x2, y2]: [number, number, number, number]) => {
+    const scaleX = rect.w / naturalW
+    const scaleY = rect.h / naturalH
+    return {
+      left:   rect.dx + x1 * scaleX,
+      top:    rect.dy + y1 * scaleY,
+      width:  (x2 - x1) * scaleX,
+      height: (y2 - y1) * scaleY,
+    }
+  }
+
+  return (
+    <>
+      {vehicleBoxes.map((v, i) => (
+        <div key={`v-${i}`} className="det-box vehicle" style={{ position: 'absolute', ...toStyle(v.box) }}>
+          <span className="det-label">{v.label.toUpperCase()} · {Math.round(v.conf * 100)}%</span>
+        </div>
+      ))}
+      {plateBoxes.map((p, i) => (
+        <div key={`p-${i}`} className="det-box plate" style={{ position: 'absolute', ...toStyle(p.box) }}>
+          <span className="det-label">{p.label}</span>
+        </div>
+      ))}
+    </>
+  )
+}
 
 const iconMap = { grid: Grid2X2, scan: ScanLine, route: Route, chart: TrendingUp, bell: Bell }
 
@@ -100,20 +175,30 @@ function ANPR({ camera, setCamera, cameraData }: { camera: number; setCamera: (n
   const [uploadedFile, setUploadedFile] = useState<CustomUploadedFile | null>(sampleLocalFiles[0])
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Real bounding-box state from the backend
+  const [vehicleBoxes, setVehicleBoxes] = useState<VehicleBox[]>([])
+  const [plateDetections, setPlateDetections] = useState<PlateDetection[]>([])
+  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
+  const imgRef = useRef<HTMLImageElement>(null)
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
     setIsAnalyzing(true)
+    setVehicleBoxes([])
+    setPlateDetections([])
     const isVideo = file.type.startsWith('video/')
     const previewUrl = URL.createObjectURL(file)
 
     try {
       const result = await analyzeANPR(file)
-      const det: any = result.detections?.find((d: any) => d.plate)
+      // Store real bounding boxes for the overlay renderer
+      setVehicleBoxes(result.vehicle_boxes ?? [])
+      setPlateDetections(result.detections ?? [])
+
+      const det = result.detections?.find((d) => d.plate)
       if (det) {
-        // Real model read from the backend (detect + OCR + Indian correction).
         const confPct = Math.round((det.confidence ?? 0) * 100)
         setUploadedFile({
           name: file.name,
@@ -130,7 +215,6 @@ function ANPR({ camera, setCamera, cameraData }: { camera: number; setCamera: (n
             : [['01', det.plate, `${confPct}%`, 'good']],
         })
       } else {
-        // Honest: the model ran but found no legible plate — no fabricated read.
         setUploadedFile({
           name: file.name,
           type: isVideo ? 'video' : 'image',
@@ -163,6 +247,10 @@ function ANPR({ camera, setCamera, cameraData }: { camera: number; setCamera: (n
 
   const handleSelectSample = (sample: CustomUploadedFile) => {
     setIsAnalyzing(true)
+    // Sample files are pre-baked; clear any real boxes from a previous upload
+    setVehicleBoxes([])
+    setPlateDetections([])
+    setNaturalSize({ w: 0, h: 0 })
     setTimeout(() => {
       setUploadedFile(sample)
       setIsAnalyzing(false)
@@ -345,16 +433,32 @@ function ANPR({ camera, setCamera, cameraData }: { camera: number; setCamera: (n
                 />
               ) : (
                 <img
+                  ref={imgRef}
                   src={uploadedFile.previewUrl}
                   alt="Uploaded local file"
+                  onLoad={e => {
+                    const img = e.currentTarget
+                    setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight })
+                  }}
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
               )
             ) : null}
 
-            {/* Bounding box simulation */}
-            <div className="vehicle-box"><span>VEHICLE · 0.97</span></div>
-            <div className="plate-box"><span>PLATE · {activeConfidence}%</span></div>
+            {/* Real YOLO bounding boxes from the backend (upload mode only) */}
+            {feedMode === 'upload' && uploadedFile?.type !== 'video' && (
+              <DetectionBoxes
+                imgRef={imgRef}
+                naturalW={naturalSize.w}
+                naturalH={naturalSize.h}
+                vehicleBoxes={vehicleBoxes}
+                plateBoxes={plateDetections.map(d => ({
+                  box: d.box,
+                  label: `${d.plate} · ${Math.round(d.confidence * 100)}%`,
+                  conf: d.confidence,
+                }))}
+              />
+            )}
 
             <div className="feed-caption">
               <strong>{feedMode === 'live' ? c.location : (uploadedFile?.location || 'Local Drive Media Import')}</strong>
@@ -440,7 +544,7 @@ function ANPR({ camera, setCamera, cameraData }: { camera: number; setCamera: (n
   )
 }
 
-function Tracking({ selected, setSelected, vehicleData }: { selected: VehicleKey; setSelected: (v: VehicleKey) => void; vehicleData: Record<string, any> }) { const v = vehicleData[selected] ?? vehicles[selected]; const [checkpoint, setCheckpoint] = useState<any>(null); return <><PageIntro kicker="03 / VEHICLE EVENT" title="Vehicle tracking" copy="Follow a vehicle across the network, with uncertainty kept visible." action={<div className="search-box"><Search size={17} /><input aria-label="Search license plate" value={selected} onChange={e => { const val = e.target.value.toUpperCase() as VehicleKey; if (val in vehicles) setSelected(val) }} placeholder="Search license plate…" /><ChevronDown size={14} /></div>} /><div className="plate-chips">{Object.keys(vehicles).map(p => <button className={p === selected ? 'selected' : ''} onClick={() => setSelected(p as VehicleKey)} key={p}>{p}</button>)}</div><div className="tracking-grid"><Card className="trajectory-card"><div className="card-head"><div><h3>Confidence-aware trajectory</h3><p>{selected} · {v.events.length} observations connected</p></div><Badge tone="teal"><Route size={13} /> CONNECTED VIEW</Badge></div><CityMap trajectory={v.events} onCheckpoint={setCheckpoint} />{checkpoint && <div className="checkpoint-detail"><div><MapPin size={16} /><strong>{checkpoint.camera}</strong><span>{checkpoint.place} · {checkpoint.time}</span></div><Confidence value={checkpoint.confidence} /><button onClick={() => setCheckpoint(null)} aria-label="Close checkpoint"><X size={15} /></button></div>}</Card><Card className="summary-card"><div className="card-head"><div><h3>Journey summary</h3><p>Aggregated from camera evidence</p></div></div><div className="summary-stats"><div><small>First seen</small><strong>{v.first}</strong></div><div><small>Last seen</small><strong>{v.last}</strong></div><div><small>Cameras visited</small><strong>{v.events.length}</strong></div><div><small>Route duration</small><strong>{v.duration}</strong></div></div><div className="overall-confidence"><div><span>Overall confidence</span><strong>{v.overall}%</strong></div><div className="confidence-meter"><i style={{ width: `${v.overall}%` }} /></div><small>Weighted by plate, appearance, time, location and motion</small></div><div className="logic-flow"><span>PLATE</span><ArrowRight size={13} /><span>RE-ID</span><ArrowRight size={13} /><span>TIME</span><ArrowRight size={13} /><span>LOCATION</span></div></Card></div><div className="timeline-grid"><Card><div className="card-head"><div><h3>Chronological evidence</h3><p>Every checkpoint contributes to the story</p></div></div><div className="timeline">{v.events.map((e, i) => <div className={`timeline-event ${e.state === 'UNCERTAIN' ? 'uncertain' : ''}`} key={e.camera}><div className="timeline-marker"><span>{i + 1}</span></div><div className="timeline-content"><div><strong>{e.camera}</strong><Badge tone={e.state === 'UNCERTAIN' ? 'warn' : 'good'}>{e.state}</Badge></div><span>{e.place}</span><small><Clock3 size={13} /> {e.time}</small></div><Confidence value={e.confidence} /></div>)}</div></Card><Card className="uncertain-card"><div className="uncertain-mark"><AlertTriangle size={19} /></div><div><h3>Uncertain ≠ discarded</h3><p>CAM014 returned a weaker read due to glare. TrackCam lowers confidence for that window, then keeps the trajectory open for later evidence.</p><button className="text-button">How association works <ArrowRight size={14} /></button></div></Card></div></> }
+function Tracking({ selected, setSelected, vehicleData }: { selected: VehicleKey; setSelected: (v: VehicleKey) => void; vehicleData: Record<string, any> }) { const v = vehicleData[selected] ?? vehicles[selected]; const [checkpoint, setCheckpoint] = useState<any>(null); return <><PageIntro kicker="03 / VEHICLE EVENT" title="Vehicle tracking" copy="Follow a vehicle across the network, with uncertainty kept visible." action={<div className="search-box"><Search size={17} /><input aria-label="Search license plate" value={selected} onChange={e => { const val = e.target.value.toUpperCase() as VehicleKey; if (val in vehicles) setSelected(val) }} placeholder="Search license plate…" /><ChevronDown size={14} /></div>} /><div className="plate-chips">{Object.keys(vehicles).map(p => <button className={p === selected ? 'selected' : ''} onClick={() => setSelected(p as VehicleKey)} key={p}>{p}</button>)}</div><div className="tracking-grid"><Card className="trajectory-card"><div className="card-head"><div><h3>Confidence-aware trajectory</h3><p>{selected} · {v.events.length} observations connected</p></div><Badge tone="teal"><Route size={13} /> CONNECTED VIEW</Badge></div><CityMap trajectory={v.events} onCheckpoint={setCheckpoint} />{checkpoint && <div className="checkpoint-detail"><div><MapPin size={16} /><strong>{checkpoint.camera}</strong><span>{checkpoint.place} · {checkpoint.time}</span></div><Confidence value={checkpoint.confidence} /><button onClick={() => setCheckpoint(null)} aria-label="Close checkpoint"><X size={15} /></button></div>}</Card><Card className="summary-card"><div className="card-head"><div><h3>Journey summary</h3><p>Aggregated from camera evidence</p></div></div><div className="summary-stats"><div><small>First seen</small><strong>{v.first}</strong></div><div><small>Last seen</small><strong>{v.last}</strong></div><div><small>Cameras visited</small><strong>{v.events.length}</strong></div><div><small>Route duration</small><strong>{v.duration}</strong></div></div><div className="overall-confidence"><div><span>Overall confidence</span><strong>{v.overall}%</strong></div><div className="confidence-meter"><i style={{ width: `${v.overall}%` }} /></div><small>Weighted by plate, appearance, time, location and motion</small></div><div className="logic-flow"><span>PLATE</span><ArrowRight size={13} /><span>RE-ID</span><ArrowRight size={13} /><span>TIME</span><ArrowRight size={13} /><span>LOCATION</span></div></Card></div><div className="timeline-grid"><Card><div className="card-head"><div><h3>Chronological evidence</h3><p>Every checkpoint contributes to the story</p></div></div><div className="timeline">{v.events.map((e: any, i: number) => <div className={`timeline-event ${e.state === 'UNCERTAIN' ? 'uncertain' : ''}`} key={e.camera}><div className="timeline-marker"><span>{i + 1}</span></div><div className="timeline-content"><div><strong>{e.camera}</strong><Badge tone={e.state === 'UNCERTAIN' ? 'warn' : 'good'}>{e.state}</Badge></div><span>{e.place}</span><small><Clock3 size={13} /> {e.time}</small></div><Confidence value={e.confidence} /></div>)}</div></Card><Card className="uncertain-card"><div className="uncertain-mark"><AlertTriangle size={19} /></div><div><h3>Uncertain ≠ discarded</h3><p>CAM014 returned a weaker read due to glare. TrackCam lowers confidence for that window, then keeps the trajectory open for later evidence.</p><button className="text-button">How association works <ArrowRight size={14} /></button></div></Card></div></> }
 
 function Analytics() { const bars = [42, 55, 46, 68, 63, 82, 76, 91, 72, 86, 78, 94]; return <><PageIntro kicker="04 / NETWORK INTELLIGENCE" title="Traffic analytics" copy="Aggregated vehicle events reveal density, congestion, and route flow." action={<button className="outline-button"><Clock3 size={15} /> Last 60 minutes <ChevronDown size={14} /></button>} /><div className="analytics-grid"><Card><div className="card-head"><div><h3>Traffic volume</h3><p>Vehicles observed per 5-minute interval</p></div><Badge tone="teal">LIVE</Badge></div><div className="chart"><div className="chart-y"><span>500</span><span>250</span><span>0</span></div><div className="bars">{bars.map((h, i) => <div key={i} className="bar-col"><i style={{ height: `${h}%` }} /><small>{i % 3 === 0 ? `${9 + Math.floor(i / 3)}:${i % 2 ? '15' : '00'}` : ''}</small></div>)}</div></div></Card><Card className="density-card"><div className="card-head"><div><h3>Road density</h3><p>Current corridor load</p></div></div>{[['Road A · Anna Salai','High','68%','red'],['Road B · Rajaji Salai','Medium','44%','amber'],['Road C · GST Road','Low','21%','teal']].map(([n,s,w,t]) => <div className="density-row" key={n}><div><strong>{n}</strong><Badge tone={t as any}>{s}</Badge></div><div className="bar"><i className={t} style={{ width: w }} /></div></div>)}</Card><Card className="heat-card"><div className="card-head"><div><h3>City traffic heatmap</h3><p>Relative activity by network zone</p></div><div className="heat-legend"><span>Low</span><i /><span>High</span></div></div><div className="heatmap">{Array.from({ length: 36 }).map((_, i) => <i key={i} className={`heat-${(i * 7 + 2) % 5}`} />)}<div className="heat-road one" /><div className="heat-road two" /><div className="heat-label l1">CENTRAL</div><div className="heat-label l2">HARBOUR</div><div className="heat-label l3">AIRPORT</div></div></Card><Card className="flow-card"><div className="card-head"><div><h3>Origin → destination flow</h3><p>Connected events in the last hour</p></div></div><div className="flow-map"><div className="flow-line f1" /><div className="flow-line f2" /><div className="flow-line f3" /><span className="flow-node n1">CAM001</span><span className="flow-node n2">CAM008</span><span className="flow-node n3">CAM014</span><span className="flow-node n4">CAM023</span></div><div className="flow-rows"><span><b>CAM001</b><ArrowRight size={13} /><b>CAM014</b><em>284 vehicles</em></span><span><b>CAM008</b><ArrowRight size={13} /><b>CAM023</b><em>196 vehicles</em></span></div></Card></div></> }
 
