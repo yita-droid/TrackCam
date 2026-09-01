@@ -22,3 +22,8 @@ datasets/*
 
 # OS
 .DS_Store
+
+# uploaded images (test/demo)
+videos/*.jpg
+videos/*.jpeg
+videos/*.png

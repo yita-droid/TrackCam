@@ -30,13 +30,15 @@ pytest==8.3.4
 pytest-asyncio==0.25.0
 httpx==0.28.1
 
-# ---- Stage 3: Computer vision + ANPR (YOLO11, plate detector, OCR) ---------
+# ---- Stage 3: Computer vision + ANPR (YOLO, plate detector, OCR) -----------
+# NOTE: OCR uses EasyOCR, not PaddleOCR — PaddlePaddle wheels are unreliable on
+# Windows + Python 3.12 (the AIML dev's target). EasyOCR runs on the torch
+# install already listed below, CPU or CUDA.
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
 pillow==11.0.0
 ultralytics==8.3.55
-paddleocr==2.9.1
-paddlepaddle==2.6.2
+easyocr==1.7.2
 
 # ---- Stage 4/5: Tracking + Re-ID -------------------------------------------
 torch==2.5.1

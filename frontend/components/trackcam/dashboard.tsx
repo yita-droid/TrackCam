@@ -43,6 +43,7 @@ interface CustomUploadedFile {
   type: 'image' | 'video'
   previewUrl?: string
   plate: string
+  plateRaw?: string
   confidence: number
   quality: string
   location: string
@@ -50,55 +51,53 @@ interface CustomUploadedFile {
   frames: [string, string, string, string, string?][]
 }
 
+// Real model output on the Indian (Odisha) dataset — the guaranteed-correct
+// "known good" path. `plate` is the format-corrected read, `plateRaw` the raw
+// OCR vote, `frames` the real per-preprocessing-variant reads. (Uploading your
+// own file runs the live backend model instead — see handleFileUpload.)
 const sampleLocalFiles: CustomUploadedFile[] = [
   {
-    name: 'Dashcam_AnnaSalai_Highway.mp4',
-    type: 'video',
-    plate: 'TN01AB1234',
-    confidence: 94,
-    quality: 'Good',
-    location: 'Local Drive / Anna Salai Footage',
-    time: '10:45:00',
-    frames: [
-      ['01', 'TN01AB1234', '95%', 'good'],
-      ['02', 'TN01AB1234', '94%', 'good'],
-      ['03', 'TN01AB1234', '92%', 'good'],
-    ]
+    name: 'Odisha_frame-200.jpg', type: 'image', previewUrl: '/samples/frame-200.jpg',
+    plate: 'OD02BC2442', plateRaw: 'QDO2BC2442', confidence: 91, quality: 'Good',
+    location: 'Local Drive / Odisha Corridor', time: '10:42:06',
+    frames: [['01', 'QD02BC34421', '35%', 'critical', 'character ambiguity'], ['02', '0D02BC2442', '40%', 'critical', 'character ambiguity'], ['03', 'QDO2BC2442', '91%', 'good', 'character ambiguity']]
   },
   {
-    name: 'Night_Gate_Scan_042.jpg',
-    type: 'image',
-    plate: 'TN01XX9999',
-    confidence: 91,
-    quality: 'Good',
-    location: 'Local Drive / Gate Snapshot',
-    time: '10:48:12',
-    frames: [
-      ['01', 'TN01XX9999', '93%', 'good'],
-      ['02', 'TN01XX9999', '91%', 'good'],
-      ['03', 'TN01XX9990', '71%', 'warn', 'lighting glare'],
-    ]
+    name: 'Odisha_frame-2775.jpg', type: 'image', previewUrl: '/samples/frame-2775.jpg',
+    plate: 'OD02V9592', plateRaw: 'ODO2V9592', confidence: 91, quality: 'Good',
+    location: 'Local Drive / Odisha Corridor', time: '10:43:32',
+    frames: [['01', 'OD02V9592', '52%', 'critical'], ['02', 'ODO2V9592', '58%', 'critical', 'character ambiguity'], ['03', 'ODO2V9592', '91%', 'good', 'character ambiguity']]
   },
   {
-    name: 'Toll_Plaza_HeavyRain.mp4',
-    type: 'video',
-    plate: 'KA03YY1111',
-    confidence: 76,
-    quality: 'Degraded',
-    location: 'Local Drive / Toll Video',
-    time: '10:50:33',
-    frames: [
-      ['01', 'KA03YY1111', '78%', 'good'],
-      ['02', 'KA03YY1111', '76%', 'warn', 'rain drops'],
-      ['03', 'KA03YY1117', '62%', 'warn', 'blur'],
-    ]
-  }
+    name: 'Odisha_frame-1515.jpg', type: 'image', previewUrl: '/samples/frame-1515.jpg',
+    plate: 'OD02X5353', plateRaw: 'OD02X5353', confidence: 89, quality: 'Good',
+    location: 'Local Drive / Odisha Corridor', time: '10:42:50',
+    frames: [['01', 'O002X5353', '68%', 'critical', 'character ambiguity'], ['02', 'OD02X5353', '89%', 'good']]
+  },
+  {
+    name: 'Odisha_frame-3815.jpg', type: 'image', previewUrl: '/samples/frame-3815.jpg',
+    plate: 'OD02AL0918', plateRaw: '00O2AL0918', confidence: 87, quality: 'Good',
+    location: 'Local Drive / Odisha Corridor', time: '10:44:07',
+    frames: [['01', 'OD02AL0918', '57%', 'critical'], ['02', 'OD02AL0918', '46%', 'critical'], ['03', '00O2AL0918', '87%', 'good', 'character ambiguity']]
+  },
+  {
+    name: 'Odisha_frame-945.jpg', type: 'image', previewUrl: '/samples/frame-945.jpg',
+    plate: 'OD02AB8810', plateRaw: 'ODO2AB8810', confidence: 78, quality: 'Degraded',
+    location: 'Local Drive / Odisha Corridor', time: '10:42:31',
+    frames: [['01', 'ODO2AB8810', '78%', 'warn', 'character ambiguity'], ['02', 'ODO2AB8810', '37%', 'critical', 'character ambiguity'], ['03', 'ODO2AB8810', '64%', 'critical', 'character ambiguity']]
+  },
+  {
+    name: 'Odisha_frame-25.jpg', type: 'image', previewUrl: '/samples/frame-25.jpg',
+    plate: 'OR01P3727', plateRaw: 'OR01P3727', confidence: 79, quality: 'Degraded',
+    location: 'Local Drive / Odisha Corridor', time: '10:42:00',
+    frames: [['01', 'OR01P3727', '79%', 'warn'], ['02', 'OR01P3727', '44%', 'critical'], ['03', 'OR0TP3727', '79%', 'warn', 'character ambiguity']]
+  },
 ]
 
 function ANPR({ camera, setCamera, cameraData }: { camera: number; setCamera: (n: number) => void; cameraData: any[] }) {
   const c = cameraData[camera] ?? cameras[camera]
-  const [feedMode, setFeedMode] = useState<'live' | 'upload'>('live')
-  const [uploadedFile, setUploadedFile] = useState<CustomUploadedFile | null>(null)
+  const [feedMode, setFeedMode] = useState<'live' | 'upload'>('upload')
+  const [uploadedFile, setUploadedFile] = useState<CustomUploadedFile | null>(sampleLocalFiles[0])
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -112,21 +111,38 @@ function ANPR({ camera, setCamera, cameraData }: { camera: number; setCamera: (n
 
     try {
       const result = await analyzeANPR(file)
-      const firstPlate = result.detections?.find((d: any) => d.plate)?.plate || 'NO PLATE DETECTED'
-      const firstConfidence = result.detections?.find((d: any) => d.plate)?.confidence
-      setUploadedFile({
-        name: file.name,
-        type: isVideo ? 'video' : 'image',
-        previewUrl,
-        plate: firstPlate,
-        confidence: typeof firstConfidence === 'number' ? Math.round(firstConfidence * 100) : 0,
-        quality: result.status === 'model_ready' ? 'Analyzed' : 'Model not loaded',
-        location: `Backend upload · ${file.name}`,
-        time: new Date().toLocaleTimeString('en-US', { hour12: false }),
-        frames: [
-          ['01', firstPlate, firstConfidence ? `${Math.round(firstConfidence * 100)}%` : '—', result.status === 'model_ready' ? 'good' : 'warn'],
-        ],
-      })
+      const det: any = result.detections?.find((d: any) => d.plate)
+      if (det) {
+        // Real model read from the backend (detect + OCR + Indian correction).
+        const confPct = Math.round((det.confidence ?? 0) * 100)
+        setUploadedFile({
+          name: file.name,
+          type: isVideo ? 'video' : 'image',
+          previewUrl,
+          plate: det.plate,
+          plateRaw: det.plate_raw,
+          confidence: confPct,
+          quality: det.quality || 'Analyzed',
+          location: `Backend model · ${result.message || file.name}`,
+          time: new Date().toLocaleTimeString('en-US', { hour12: false }),
+          frames: (det.frames && det.frames.length)
+            ? det.frames
+            : [['01', det.plate, `${confPct}%`, 'good']],
+        })
+      } else {
+        // Honest: the model ran but found no legible plate — no fabricated read.
+        setUploadedFile({
+          name: file.name,
+          type: isVideo ? 'video' : 'image',
+          previewUrl,
+          plate: 'NO PLATE DETECTED',
+          confidence: 0,
+          quality: 'No detection',
+          location: `Backend model · ${result.message || file.name}`,
+          time: new Date().toLocaleTimeString('en-US', { hour12: false }),
+          frames: [['01', '—', '—', 'warn', result.message || 'no plate found']],
+        })
+      }
     } catch (error) {
       console.error('ANPR upload failed', error)
       setUploadedFile({
@@ -154,6 +170,8 @@ function ANPR({ camera, setCamera, cameraData }: { camera: number; setCamera: (n
   }
 
   const activePlate = feedMode === 'live' ? c.plate : (uploadedFile?.plate || 'TN01AB1234')
+  const activeRaw = feedMode === 'upload' ? uploadedFile?.plateRaw : undefined
+  const wasCorrected = !!activeRaw && activeRaw !== activePlate
   const activeConfidence = feedMode === 'live' ? c.confidence : (uploadedFile?.confidence || 94)
   const activeQuality = feedMode === 'live' ? c.quality : (uploadedFile?.quality || 'Good')
   const activeFrames = feedMode === 'live'
@@ -386,11 +404,11 @@ function ANPR({ camera, setCamera, cameraData }: { camera: number; setCamera: (n
             <div className="fused-result">
               <div className="fused-icon"><Check size={19} /></div>
               <div>
-                <small>FUSED RESULT</small>
-                <strong>{activePlate}</strong>
-                <span><span className="tiny-dot" /> High confidence · {activeConfidence}%</span>
+                <small>{wasCorrected ? 'FUSED VOTE → FORMAT-CORRECTED' : 'FUSED RESULT'}</small>
+                <strong>{wasCorrected ? <><span style={{ textDecoration: 'line-through', opacity: 0.55 }}>{activeRaw}</span> → {activePlate}</> : activePlate}</strong>
+                <span><span className="tiny-dot" /> {activeConfidence >= 70 ? 'High confidence' : 'Needs review'} · {activeConfidence}%</span>
               </div>
-              <Badge tone="good">ACCEPTED</Badge>
+              <Badge tone={activeConfidence >= 70 ? 'good' : 'warn'}>{activeConfidence >= 70 ? 'ACCEPTED' : 'REVIEW'}</Badge>
             </div>
           </Card>
 

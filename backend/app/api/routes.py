@@ -112,19 +112,59 @@ async def analyze(file: UploadFile = File(...)) -> dict[str, Any]:
     destination = upload_dir / safe_name
     destination.write_bytes(data)
 
-    yolo_exists = Path(settings.YOLO_MODEL_PATH).exists()
-    plate_exists = Path(settings.PLATE_MODEL_PATH).exists()
+    backend_root = Path(__file__).resolve().parents[2]
+
+    def _exists(rel: str) -> bool:
+        p = Path(rel)
+        return p.exists() or (backend_root / rel).exists()
+
+    yolo_exists = _exists(settings.YOLO_MODEL_PATH)
+    plate_exists = _exists(settings.PLATE_MODEL_PATH)
+    is_image = (file.content_type or "").startswith("image/")
+
+    detections: list[dict[str, Any]] = []
+    ocr_ran = False
+    device = None
+    error: str | None = None
+
+    # Real inference: images only (per demo scope). Videos are accepted and
+    # stored but not run through the live pipeline here.
+    if is_image and plate_exists:
+        try:
+            from app.ai.engine import analyze_image
+            result = analyze_image(data)
+            detections = result.get("detections", [])
+            device = result.get("device")
+            ocr_ran = True
+        except Exception as exc:  # noqa: BLE001 - report, don't crash the API
+            error = f"{type(exc).__name__}: {exc}"
+
+    if ocr_ran:
+        status = "model_ready"
+        if detections:
+            message = f"Read {len(detections)} plate(s) on {device or 'cpu'}."
+        else:
+            message = "No license plate detected / legible in this image."
+    elif not plate_exists:
+        status = "model_not_available"
+        message = "Plate model weights not found. Add backend/models/plate.pt to enable inference."
+    elif not is_image:
+        status = "model_ready"
+        message = "Video stored. Live inference is enabled for images only; use the offline pipeline for video."
+    else:
+        status = "model_not_available"
+        message = f"Inference failed: {error}" if error else "Inference unavailable."
+
     return {
-        "status": "model_ready" if yolo_exists and plate_exists else "model_not_available",
+        "status": status,
         "filename": safe_name,
         "size_bytes": len(data),
         "media_type": file.content_type,
         "models": {
             "vehicle_detector": yolo_exists,
             "plate_detector": plate_exists,
-            "ocr": False,
+            "ocr": ocr_ran,
         },
-        "detections": [],
-        "message": "Upload received. Add trained YOLO/plate model weights and OCR pipeline to enable real ANPR inference."
-        if not (yolo_exists and plate_exists) else "Models detected; inference pipeline is ready to be connected.",
+        "detections": detections,
+        "message": message,
     }
