@@ -1,0 +1,61 @@
+# =============================================================================
+# TrackCam Backend — docker-compose
+#
+# Brings up: postgres + backend (FastAPI/Uvicorn).
+# GPU is optional — uncomment the `deploy.resources` block under `backend`
+# if running on a host with the NVIDIA Container Toolkit installed.
+#
+# Usage:
+#   cp .env.example .env   # then edit values
+#   docker compose up --build
+# =============================================================================
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: trackcam-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trackcam
+      POSTGRES_PASSWORD: trackcam
+      POSTGRES_DB: trackcam
+    ports:
+      - "5432:5432"
+    volumes:
+      - trackcam_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trackcam -d trackcam"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trackcam-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Overrides .env's DATABASE_URL host to the compose service name.
+      DATABASE_URL: postgresql+psycopg2://trackcam:trackcam@postgres:5432/trackcam
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+      - ./videos:/app/videos
+      - ./datasets:/app/datasets
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Uncomment for GPU acceleration (requires NVIDIA Container Toolkit on host):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  trackcam_pgdata:
